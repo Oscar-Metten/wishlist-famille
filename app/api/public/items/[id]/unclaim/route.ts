@@ -1,59 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
-import { db, wishlistItems, wishlists } from '@/lib/db';
-
+import { NextRequest } from "next/server";
+import { db, wishlistItems, wishlists } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
+import { endpoint, requireVisitor, tokenHash, fail } from "@/lib/server";
 export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  r: NextRequest,
+  c: { params: Promise<{ id: string }> },
 ) {
-  try {
-    const { id } = await params;
-
-    // Get the item
-    const item = await db
+  const { id } = await c.params;
+  const response = await endpoint(() => {
+    requireVisitor(r);
+    const item = db
       .select()
       .from(wishlistItems)
       .where(eq(wishlistItems.id, id))
-      .limit(1);
-
-    if (item.length === 0) {
-      return NextResponse.json(
-        { error: 'Item not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if item is actually claimed
-    if (!item[0].claimedByToken) {
-      return NextResponse.json(
-        { error: 'Item is not claimed' },
-        { status: 400 }
-      );
-    }
-
-    // Check if wishlist is public
-    const wishlist = await db
-      .select()
-      .from(wishlists)
-      .where(eq(wishlists.id, item[0].wishlistId))
-      .limit(1);
-
-    if (wishlist.length === 0) {
-      return NextResponse.json(
-        { error: 'Wishlist not found' },
-        { status: 404 }
-      );
-    }
-
-    if (!wishlist[0].isPublic) {
-      return NextResponse.json(
-        { error: 'This wishlist is private' },
-        { status: 403 }
-      );
-    }
-
-    // Remove claim information (honor system - no verification)
-    const updatedItem = await db
+      .get();
+    const list =
+      item &&
+      db
+        .select()
+        .from(wishlists)
+        .where(eq(wishlists.id, item.wishlistId))
+        .get();
+    if (!item || !list?.isPublic) fail(404, "Cadeau introuvable.");
+    const proof = tokenHash(r.cookies.get(`claim_${id}`)?.value || "");
+    const updated = db
       .update(wishlistItems)
       .set({
         claimedByName: null,
@@ -61,24 +31,18 @@ export async function POST(
         claimedByToken: null,
         claimedAt: null,
         isPurchased: false,
-        updatedAt: new Date(),
       })
-      .where(eq(wishlistItems.id, id))
-      .returning();
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Item unclaimed successfully',
-        item: updatedItem[0],
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error('Error unclaiming item:', error);
-    return NextResponse.json(
-      { error: 'Failed to unclaim item' },
-      { status: 500 }
-    );
-  }
+      .where(
+        and(eq(wishlistItems.id, id), eq(wishlistItems.claimedByToken, proof)),
+      )
+      .run();
+    if (!updated.changes)
+      fail(
+        403,
+        "Seule la personne qui a réservé peut annuler depuis son navigateur.",
+      );
+    return { success: true, message: "Réservation annulée." };
+  });
+  if (response.ok) response.cookies.delete(`claim_${id}`);
+  return response;
 }

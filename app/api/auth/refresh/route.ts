@@ -1,75 +1,32 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken, isSecureCookie } from '@/lib/auth/utils';
-
-export async function POST(request: NextRequest) {
-  try {
-    // Get refresh token from cookie or body
-    let refreshToken: string | undefined;
-
-    const cookieToken = request.cookies.get('refresh_token')?.value;
-    if (cookieToken) {
-      refreshToken = cookieToken;
-    } else {
-      try {
-        const body = await request.json();
-        refreshToken = body.refreshToken;
-      } catch {
-        // No body or invalid JSON, continue without it
-        refreshToken = undefined;
-      }
-    }
-
-    if (!refreshToken) {
-      return NextResponse.json(
-        { error: 'No refresh token provided' },
-        { status: 401 }
-      );
-    }
-
-    // Verify refresh token
-    const payload = verifyRefreshToken(refreshToken);
-    if (!payload) {
-      return NextResponse.json(
-        { error: 'Invalid or expired refresh token' },
-        { status: 401 }
-      );
-    }
-
-    // Generate new tokens
-    const newAccessToken = generateAccessToken(payload.username);
-    const newRefreshToken = generateRefreshToken(payload.username);
-
-    // Create response
-    const response = NextResponse.json({
-      success: true,
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-    });
-
-    // Set new cookies
-    const cookieOptions = {
+import { NextRequest } from "next/server";
+import { endpoint, fail } from "@/lib/server";
+import {
+  verifyRefreshToken,
+  generateAccessToken,
+  generateRefreshToken,
+  isSecureCookie,
+} from "@/lib/auth/utils";
+export async function POST(r: NextRequest) {
+  const user = verifyRefreshToken(r.cookies.get("refresh_token")?.value || "");
+  const response = await endpoint(() => {
+    if (!user) fail(401, "Session expirée. Reconnectez-vous.");
+    return { success: true, user };
+  });
+  if (user) {
+    const options = {
       httpOnly: true,
-      secure: isSecureCookie(request),
-      sameSite: 'lax' as const,
-      path: '/',
+      sameSite: "lax" as const,
+      secure: isSecureCookie(r),
+      path: "/",
     };
-
-    response.cookies.set('access_token', newAccessToken, {
-      ...cookieOptions,
-      maxAge: 72 * 60 * 60, // 72 hours
+    response.cookies.set("access_token", generateAccessToken(user), {
+      ...options,
+      maxAge: 43200,
     });
-
-    response.cookies.set('refresh_token', newRefreshToken, {
-      ...cookieOptions,
-      maxAge: 30 * 24 * 60 * 60, // 30 days
+    response.cookies.set("refresh_token", generateRefreshToken(user), {
+      ...options,
+      maxAge: 30 * 86400,
     });
-
-    return response;
-  } catch (error) {
-    console.error('Refresh error:', error);
-    return NextResponse.json(
-      { error: 'Token refresh failed' },
-      { status: 500 }
-    );
   }
+  return response;
 }

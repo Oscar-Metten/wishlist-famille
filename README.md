@@ -1,159 +1,60 @@
-# Wishlist
+# Wishlist Famille
 
-[![Docker Hub](https://img.shields.io/docker/pulls/reggiodigital/wishlist)](https://hub.docker.com/r/reggiodigital/wishlist)
-[![License](https://img.shields.io/github/license/Reggio-Digital/wishlist)](https://github.com/Reggio-Digital/wishlist/blob/main/LICENSE)
+Version familiale française de [Reggio-Digital/wishlist](https://github.com/Reggio-Digital/wishlist), sous licence MIT. Le projet d’origine et sa licence sont conservés.
 
-A simple, self-hosted wishlist app for sharing gift ideas with family and friends.
+- Une page d’accueil commune et une ou plusieurs listes par personne.
+- Comptes personnels : chacun gère uniquement ses propres listes et cadeaux.
+- Administration des comptes : création d’un membre avec sa première liste privée, réinitialisation des mots de passe. Chaque membre peut changer le sien.
+- Photos par lien, import de fichier ou collage ; conversion en WebP, taille maximale 5 Mo.
+- Prix indicatif en euros par défaut, format français, plusieurs liens de boutiques par cadeau.
+- Import depuis un lien : titre, description, image, prix et devise quand la boutique les fournit. Vérification avant enregistrement ; les champs déjà saisis sont conservés.
+- Réservation sans compte. Seul le navigateur qui a réservé peut annuler grâce à un cookie privé ; aucune preuve de réservation n’est exposée par les API.
+- Réservations masquées au propriétaire connecté. Un propriétaire peut toujours découvrir les réservations en visitant anonymement sa propre liste : ce n’est pas une protection contre une recherche volontaire.
+- Option de mot de passe familial pour l’accès des visiteurs, contrôlée côté serveur.
 
-## Why This App?
+## Installation avec Docker Compose
 
-Most wishlist apps are bloated with features you don't need, require accounts for everyone, or lock you into a platform. This app solves a simple problem: you want to share what you'd like as gifts, and your friends and family want to claim items without spoiling the surprise.
+1. Copier `.env.example` vers `.env`.
+2. Remplir `ADMIN_PASSWORD` (12 caractères minimum) et `APP_ORIGIN`, l’adresse exacte ouverte dans le navigateur.
+3. Lancer `docker compose up -d --build`.
+4. Ouvrir `http://localhost:3187/admin/login` si vous conservez le port par défaut.
+5. Se connecter, créer les comptes dans « Comptes de la famille » et transmettre les identifiants directement aux personnes concernées.
+6. Chacun remplit sa liste puis coche « Partagée ». Les listes privées ne sont visibles que de leur propriétaire.
 
-**Features:**
+Le compte administrateur peut créer les membres et modifier les réglages du site ; il n’obtient pas automatiquement l’accès aux listes privées des autres. Pour ses propres cadeaux, il utilise ses propres listes.
 
-- **Simple** - No complex features, just wishlists and items
-- **Easy to Share** - Send a single URL, no signups required
-- **Multiple Purchase Links** - Add multiple store links for each item so people can choose where to buy
-- **Public/Private Wishlists** - Keep lists private while you're working on them, then make them public when ready
-- **No Peeking!** - Admins can't see claimed items from the dashboard - you'd have to visit the specific wishlist's public URL to spoil the surprise
-- **Privacy-Focused** - Self-hosted, your data stays with you
-- **Transparent** - Anyone viewing the list can see what's been claimed to avoid duplicates
-- **Low Maintenance** - Single Docker container with SQLite, no database setup needed
-- **URL Scraping** - Auto-fill item details from product URLs _(Coming Soon)_
+Le mot de passe d’environnement initialise le tout premier compte. Après cela, les changements se font dans l’application. Modifier `.env` ne remplace pas le mot de passe d’un compte existant.
 
-## Demo
+Les données et la clé de session sont conservées dans `data/`. Ce dossier et `.env` sont exclus de Git. Ne jamais partager une archive de `data/` avec le code. Pour une sauvegarde cohérente, arrêter le conteneur, copier tout `data/`, puis le redémarrer. Un retour vers la version d’origine nécessite la restauration de la sauvegarde antérieure à la migration.
 
-![Demo Video](video.mp4)
+## Accès depuis le homelab
 
-## Screenshots
+Voir [DEPLOYMENT.md](DEPLOYMENT.md). Le fichier Compose construit votre version locale ; il ne télécharge pas l’image d’origine qui ne contient pas ces modifications. Pour une publication sur Internet, utiliser HTTPS et définir `APP_ORIGIN` sur l’URL publique. Configurer aussi la limite des requêtes du reverse proxy (6 Mo suffisent pour les photos). Les visiteurs ne doivent jamais avoir accès au dossier `data/`.
 
-### Homepage
+## Développement
 
-![Homepage](screenshot1.png)
+Node.js 24 et pnpm 11.25.0.
 
-### Wishlist View
-
-![Wishlist View](screenshot2.png)
-
-### Admin Dashboard
-
-![Admin Dashboard](screenshot3.png)
-
-### Admin Dashboard - Item Details
-
-![Admin Dashboard - Item Details](screenshot4.png)
-
-## Quick Start
-
-### Using Docker Compose
-
-```bash
-# Clone and configure
-git clone https://github.com/Reggio-Digital/wishlist
-cd wishlist
-cp .env.example .env
-
-# Edit .env with your admin credentials
-nano .env
-
-# Start with Docker Compose
-docker-compose up -d
+```sh
+corepack enable
+corepack prepare pnpm@11.25.0 --activate
+pnpm install --frozen-lockfile
+# Définir les variables du premier compte dans .env.local (hors Git)
+# Pour le développement : APP_ORIGIN=http://localhost:3000
+pnpm dev
+pnpm test
+pnpm typecheck
+pnpm build
 ```
 
-Visit http://localhost:3000
+L’import est fondé sur les données produit JSON-LD et les métadonnées publiques des pages. Il ne garantit ni le prix en direct ni le stock et ne contourne pas les CAPTCHA. Une fiche partielle reste modifiable manuellement. Les requêtes d’import ne peuvent pas atteindre les adresses locales, privées, de métadonnées cloud ou les ports non standard ; chaque redirection est vérifiée et la résolution DNS validée est utilisée pour la connexion.
 
-### Using Docker Image
+Les fichiers `public/images/` viennent du projet d’origine et ne sont pas insérés dans les nouvelles listes. Aucun exemple de cadeau ou compte de test n’est ajouté dans l’installation familiale.
 
-```bash
-docker run -d \
-  -p 3000:3000 \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e ADMIN_USERNAME=admin \
-  -e ADMIN_PASSWORD=your-secure-password \
-  -v wishlist-data:/app/data \
-  --name wishlist \
-  reggiodigital/wishlist:latest
-```
+## Vérifications
 
-**For Unraid users:** Set `-e PUID=99 -e PGID=100`
+Les tests couvrent les prix français, l’extraction produit, les adresses refusées, les comptes, les droits d’accès aux listes et cadeaux, les images, les réservations concurrentes, les preuves d’annulation, le mot de passe familial, l’invalidation des sessions et les origines de requêtes. Les tests utilisent un dossier temporaire indépendant.
 
-## Data Storage
+## GitHub
 
-Data is stored in `/app/data`:
-
-- `/app/data/db` - SQLite database files
-- `/app/data/uploads` - Uploaded images
-
-## Environment Variables
-
-Create a `.env` file:
-
-```env
-# Required - Admin Credentials
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=changeme
-
-# Optional - User/Group IDs for docker-compose (defaults to 1000:1000)
-# For Unraid, use PUID=99 and PGID=100
-PUID=1000
-PGID=1000
-
-# Optional - JWT Secret (auto-generated if not provided)
-# Generate with: openssl rand -base64 32
-SECRET=
-
-# Optional - Cookie Security
-# Set to 'false' for HTTP access (e.g., local LAN without HTTPS)
-# When unset, auto-detects HTTPS via X-Forwarded-Proto header
-COOKIE_SECURE=false
-```
-
-### User Permissions (PUID/PGID)
-
-The container automatically handles file permissions using PUID/PGID environment variables (LinuxServer.io pattern):
-
-- **Default:** `1000:1000` (standard Linux user)
-- **Unraid:** Set `PUID=99` and `PGID=100` (nobody:users)
-- **Find your IDs:** Run `id` on your system
-
-Example for Unraid in `.env`:
-```env
-PUID=99
-PGID=100
-```
-
-The entrypoint script automatically:
-- Creates the user/group if needed
-- Sets correct ownership on data directories
-- Ensures proper file permissions for uploads
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-```
-
-## Pages
-
-- `/admin/login` - Admin authentication
-- `/admin` - Admin dashboard (manage wishlists and items)
-- `/[slug]` - Public wishlist view
-
-## License
-
-MIT
-
----
-
-Made with ❤️ by [Reggio Digital](https://reggiodigital.com)
+La branche de préparation est `feature/famille-fr`. Un fork GitHub peut recevoir cette branche ; conserver le dépôt d’origine comme remote `upstream`. Le workflow « Vérifications » exécute les tests et la construction. La publication d’une image sur GHCR est **manuelle** via le workflow dédié ; aucun identifiant Docker Hub n’est nécessaire.

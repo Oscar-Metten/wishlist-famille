@@ -1,67 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
-import { db, settings } from '@/lib/db';
-import crypto from 'crypto';
-import { isSecureCookie } from '@/lib/auth/utils';
-
-// POST /api/lock - Verify password
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { password } = body;
-
-    if (!password) {
-      return NextResponse.json(
-        { error: 'Password is required' },
-        { status: 400 }
-      );
-    }
-
-    // Get the stored password hash
-    const hashSetting = await db
+import { NextRequest } from "next/server";
+import { db, settings } from "@/lib/db";
+import { eq } from "drizzle-orm";
+import { endpoint, fail } from "@/lib/server";
+import { checkPassword } from "@/lib/auth/password";
+import { signSiteAccess, isSecureCookie } from "@/lib/auth/utils";
+export async function POST(r: NextRequest) {
+  let hash: string | undefined;
+  const response = await endpoint(async () => {
+    const { password } = await r.json();
+    const stored = db
       .select()
       .from(settings)
-      .where(eq(settings.key, 'passwordLockHash'))
-      .limit(1);
-
-    if (hashSetting.length === 0) {
-      return NextResponse.json(
-        { error: 'Password lock not configured' },
-        { status: 400 }
-      );
-    }
-
-    // Hash the provided password
-    const hash = crypto.createHash('sha256').update(password).digest('hex');
-
-    // Compare hashes
-    if (hash === hashSetting[0].value) {
-      // Password correct - set a cookie
-      const response = NextResponse.json({
-        success: true,
-        message: 'Password verified',
-      });
-
-      response.cookies.set('site_unlocked', 'true', {
-        httpOnly: true,
-        secure: isSecureCookie(request),
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24,
-        path: '/',
-      });
-
-      return response;
-    } else {
-      return NextResponse.json(
-        { error: 'Incorrect password' },
-        { status: 401 }
-      );
-    }
-  } catch (error) {
-    console.error('Error verifying password:', error);
-    return NextResponse.json(
-      { error: 'Failed to verify password' },
-      { status: 500 }
-    );
-  }
+      .where(eq(settings.key, "passwordLockHash"))
+      .get()?.value;
+    if (
+      !stored ||
+      typeof password !== "string" ||
+      password.length > 1024 ||
+      !checkPassword(password, stored)
+    )
+      fail(401, "Mot de passe incorrect.");
+    hash = stored;
+    return { success: true };
+  });
+  if (hash)
+    response.cookies.set("site_unlocked", signSiteAccess(hash), {
+      httpOnly: true,
+      secure: isSecureCookie(r),
+      sameSite: "lax",
+      path: "/",
+      maxAge: 7 * 86400,
+    });
+  return response;
 }

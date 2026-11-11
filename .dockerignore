@@ -51,7 +51,6 @@ next-env.d.ts
 # Documentation
 README.md
 DEPLOYMENT.md
-LICENSE
 
 # Docker files
 Dockerfile

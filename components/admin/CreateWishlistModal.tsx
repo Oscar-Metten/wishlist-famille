@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import ImageUpload from '@/components/image-upload';
-import RichTextEditor from '@/components/RichTextEditor';
+import { useState } from "react";
+import ImageUpload from "@/components/image-upload";
+import RichTextEditor from "@/components/RichTextEditor";
 
 interface WishlistFormData {
   name: string;
@@ -27,11 +27,11 @@ export default function CreateWishlistModal({
   error,
 }: CreateWishlistModalProps) {
   const [formData, setFormData] = useState<WishlistFormData>({
-    name: '',
-    slug: '',
-    description: '',
-    preferences: '',
-    imageUrl: '',
+    name: "",
+    slug: "",
+    description: "",
+    preferences: "",
+    imageUrl: "",
     isPublic: true,
   });
   const [isCreating, setIsCreating] = useState(false);
@@ -42,9 +42,11 @@ export default function CreateWishlistModal({
       ...prev,
       name,
       slug: name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, ''),
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, ""),
     }));
   };
 
@@ -54,14 +56,30 @@ export default function CreateWishlistModal({
 
     try {
       await onCreate(formData);
-      setFormData({ name: '', slug: '', description: '', preferences: '', imageUrl: '', isPublic: true });
+      setFormData({
+        name: "",
+        slug: "",
+        description: "",
+        preferences: "",
+        imageUrl: "",
+        isPublic: true,
+      });
+    } catch {
+      /* L’erreur est affichée dans le formulaire. */
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleClose = () => {
-    setFormData({ name: '', slug: '', description: '', preferences: '', imageUrl: '', isPublic: true });
+    setFormData({
+      name: "",
+      slug: "",
+      description: "",
+      preferences: "",
+      imageUrl: "",
+      isPublic: true,
+    });
     onClose();
   };
 
@@ -69,9 +87,9 @@ export default function CreateWishlistModal({
 
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
+      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
         <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">
-          Create New Wishlist
+          Créer une liste
         </h2>
         <form onSubmit={handleSubmit}>
           {error && (
@@ -81,10 +99,14 @@ export default function CreateWishlistModal({
           )}
           <div className="space-y-4">
             <div>
-              <label className="block text-base font-medium text-gray-900 dark:text-gray-200 mb-1">
-                Name *
+              <label
+                htmlFor="list-name"
+                className="block text-base font-medium text-gray-900 dark:text-gray-200 mb-1"
+              >
+                Nom *
               </label>
               <input
+                id="list-name"
                 type="text"
                 required
                 className="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 dark:text-white dark:bg-gray-700"
@@ -94,7 +116,7 @@ export default function CreateWishlistModal({
             </div>
             <div>
               <label className="block text-base font-medium text-gray-900 dark:text-gray-200 mb-1">
-                Slug (URL-friendly)
+                Adresse de la liste
               </label>
               <input
                 type="text"
@@ -124,23 +146,28 @@ export default function CreateWishlistModal({
             </div>
             <div>
               <label className="block text-base font-medium text-gray-900 dark:text-gray-200 mb-2">
-                General Interests & Preferences
+                Goûts et préférences
               </label>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                Share general things you like - hobbies, styles, colors, brands, etc. This appears before your wishlist items.
+                Indiquez vos loisirs, styles, couleurs ou marques préférés. Ces
+                informations apparaîtront avant les cadeaux.
               </p>
               <RichTextEditor
                 value={formData.preferences}
-                onChange={(html) => setFormData((prev) => ({ ...prev, preferences: html }))}
-                placeholder="e.g., I love anything purple, enjoy sci-fi books, prefer sustainable brands..."
+                onChange={(html) =>
+                  setFormData((prev) => ({ ...prev, preferences: html }))
+                }
+                placeholder="Par exemple : LEGO, informatique, romans de science-fiction…"
               />
             </div>
             <ImageUpload
               currentImageUrl={formData.imageUrl}
-              onImageChange={(url) => setFormData((prev) => ({ ...prev, imageUrl: url }))}
+              onImageChange={(url) =>
+                setFormData((prev) => ({ ...prev, imageUrl: url }))
+              }
               onUploadStateChange={setIsImageUploading}
               type="wishlist"
-              label="Wishlist Image"
+              label="Photo de la liste"
             />
             <div className="flex items-center">
               <input
@@ -159,7 +186,7 @@ export default function CreateWishlistModal({
                 htmlFor="isPublic"
                 className="ml-2 block text-base font-medium text-gray-900 dark:text-gray-200"
               >
-                Make Public
+                Rendre visible aux proches
               </label>
             </div>
           </div>
@@ -169,14 +196,18 @@ export default function CreateWishlistModal({
               onClick={handleClose}
               className="px-6 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-base font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              Cancel
+              Annuler
             </button>
             <button
               type="submit"
               disabled={isCreating || isImageUploading}
               className="px-6 py-3 border border-transparent rounded-lg text-base font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isImageUploading ? 'Uploading...' : isCreating ? 'Creating...' : 'Create'}
+              {isImageUploading
+                ? "Envoi de l’image…"
+                : isCreating
+                  ? "Création…"
+                  : "Créer la liste"}
             </button>
           </div>
         </form>

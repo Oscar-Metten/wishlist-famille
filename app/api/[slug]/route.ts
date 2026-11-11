@@ -1,44 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
-import { db, wishlists } from '@/lib/db';
-
+import { NextRequest } from "next/server";
+import { db, wishlists } from "@/lib/db";
+import { eq } from "drizzle-orm";
+import { endpoint, session, requireVisitor, fail } from "@/lib/server";
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
+  r: NextRequest,
+  c: { params: Promise<{ slug: string }> },
 ) {
-  try {
-    const { slug } = await params;
-
-    const wishlist = await db
+  return endpoint(async () => {
+    const list = db
       .select()
       .from(wishlists)
-      .where(eq(wishlists.slug, slug))
-      .limit(1);
-
-    if (wishlist.length === 0) {
-      return NextResponse.json(
-        { error: 'Wishlist not found' },
-        { status: 404 }
-      );
-    }
-
-    // Only return public wishlists
-    if (!wishlist[0].isPublic) {
-      return NextResponse.json(
-        { error: 'Wishlist not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
+      .where(eq(wishlists.slug, (await c.params).slug))
+      .get();
+    if (!list || !list.isPublic) fail(404, "Liste introuvable.");
+    requireVisitor(r);
+    const { ownerId, ...safe } = list!;
+    return {
       success: true,
-      wishlist: wishlist[0],
-    });
-  } catch (error) {
-    console.error('Error fetching wishlist by slug:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch wishlist' },
-      { status: 500 }
-    );
-  }
+      wishlist: safe,
+      isOwner: ownerId === session(r)?.id,
+    };
+  });
 }

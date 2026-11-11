@@ -1,6 +1,8 @@
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-
+import http from "node:http";
+import https from "node:https";
+import { lookup } from "node:dns/promises";
+import { isIP, BlockList } from "node:net";
+import * as cheerio from "cheerio";
 export interface ScrapedData {
   title: string | null;
   description: string | null;
@@ -9,340 +11,255 @@ export interface ScrapedData {
   imageUrl: string | null;
   url: string;
 }
-
-/**
- * Fetch and parse HTML from a URL
- */
-async function fetchHtml(url: string): Promise<string> {
-  try {
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+const blocked = new BlockList();
+for (const [ip, bits] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const)
+  blocked.addSubnet(ip, bits, "ipv4");
+blocked.addSubnet("2001::", 23, "ipv6");
+blocked.addSubnet("2001:db8::", 32, "ipv6");
+blocked.addSubnet("2002::", 16, "ipv6");
+export function isPublicAddress(address: string) {
+  const family = isIP(address);
+  if (family === 4) return !blocked.check(address, "ipv4");
+  // Accept global unicast IPv6 only; mapped IPv4, local and transition ranges are refused.
+  if (family === 6)
+    return /^[23]/i.test(address) && !blocked.check(address, "ipv6");
+  return false;
+}
+export async function validateTarget(input: string) {
+  const url = new URL(input);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    (url.port && !["80", "443"].includes(url.port))
+  )
+    throw new Error(
+      "Seuls les liens de boutiques HTTP ou HTTPS sont acceptés.",
+    );
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (!hostname.includes(".") && !isIP(hostname))
+    throw new Error("Adresse de boutique invalide.");
+  const addresses = isIP(hostname)
+    ? [{ address: hostname, family: isIP(hostname) }]
+    : await lookup(hostname, { all: true });
+  if (!addresses.length || addresses.some((a) => !isPublicAddress(a.address)))
+    throw new Error("Les adresses locales et privées sont interdites.");
+  return { url, address: addresses[0] };
+}
+export async function fetchProductHtml(
+  input: string,
+  signal = AbortSignal.timeout(12000),
+  redirects = 0,
+): Promise<{ html: string; url: string }> {
+  const { url, address } = await validateTarget(input);
+  return new Promise((resolve, reject) => {
+    const transport = url.protocol === "https:" ? https : http;
+    const req = transport.get(
+      url,
+      {
+        signal,
+        headers: {
+          "User-Agent": "WishlistFamille/1.0 (product metadata)",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Encoding": "identity",
+        },
+        // Pin the validated address so a second DNS resolution cannot reach the home network.
+        lookup: (_host, options, callback) => {
+          if (options.all) callback(null, [address]);
+          else callback(null, address.address, address.family);
+        },
       },
-      timeout: 10000, // 10 second timeout
-    });
-    return response.data;
-  } catch (error) {
-    throw new Error(`Failed to fetch URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-/**
- * Extract price from text (e.g., "$99.99", "99,99 €", "£50")
- */
-function extractPrice(text: string): { price: number | null; currency: string | null } {
-  // Remove whitespace and normalize
-  const normalized = text.trim().replace(/\s+/g, '');
-
-  // Match currency symbols and numbers
-  // Patterns: $99.99, 99.99 USD, €99,99, £50.00, etc.
-  const patterns = [
-    /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/,  // $99.99, $1,299.99
-    /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*USD/i,  // 99.99 USD
-    /€(\d+(?:\.\d{3})*(?:,\d{2})?)/,  // €99,99
-    /£(\d+(?:,\d{3})*(?:\.\d{2})?)/,  // £99.99
-    /(\d+(?:,\d{3})*(?:\.\d{2})?)/,  // Fallback: just numbers
-  ];
-
-  for (const pattern of patterns) {
-    const match = normalized.match(pattern);
-    if (match) {
-      // Extract number and remove commas, convert to float
-      const priceStr = match[1].replace(/,/g, '');
-      const price = parseFloat(priceStr);
-
-      if (!isNaN(price)) {
-        // Determine currency
-        let currency = 'USD';
-        if (normalized.includes('$')) currency = 'USD';
-        else if (normalized.includes('€')) currency = 'EUR';
-        else if (normalized.includes('£')) currency = 'GBP';
-        else if (normalized.match(/USD/i)) currency = 'USD';
-        else if (normalized.match(/EUR/i)) currency = 'EUR';
-        else if (normalized.match(/GBP/i)) currency = 'GBP';
-
-        return { price, currency };
-      }
-    }
-  }
-
-  return { price: null, currency: null };
-}
-
-/**
- * Generic scraper using Open Graph and meta tags
- */
-function scrapeGeneric(html: string, url: string): ScrapedData {
-  const $ = cheerio.load(html);
-
-  // Try Open Graph tags first
-  const ogTitle = $('meta[property="og:title"]').attr('content');
-  const ogDescription = $('meta[property="og:description"]').attr('content');
-  const ogImage = $('meta[property="og:image"]').attr('content');
-  const ogPriceAmount = $('meta[property="og:price:amount"]').attr('content');
-  const ogPriceCurrency = $('meta[property="og:price:currency"]').attr('content');
-
-  // Fallback to other meta tags
-  const metaDescription = $('meta[name="description"]').attr('content');
-  const title = ogTitle || $('title').text().trim() || null;
-  const description = ogDescription || metaDescription || null;
-  const imageUrl = ogImage || $('link[rel="image_src"]').attr('href') || null;
-
-  // Try to extract price from OG tags or page content
-  let price: number | null = null;
-  let currency: string | null = null;
-
-  if (ogPriceAmount && ogPriceCurrency) {
-    price = parseFloat(ogPriceAmount);
-    currency = ogPriceCurrency;
-  } else {
-    // Try to find price in common selectors
-    const priceSelectors = [
-      '.price',
-      '[data-price]',
-      '.product-price',
-      '[itemprop="price"]',
-      '.a-price .a-offscreen', // Amazon
-    ];
-
-    for (const selector of priceSelectors) {
-      const priceText = $(selector).first().text();
-      if (priceText) {
-        const extracted = extractPrice(priceText);
-        if (extracted.price !== null) {
-          price = extracted.price;
-          currency = extracted.currency;
-          break;
+      (res) => {
+        if (
+          res.statusCode &&
+          [301, 302, 303, 307, 308].includes(res.statusCode) &&
+          res.headers.location
+        ) {
+          res.resume();
+          if (redirects >= 4) return reject(new Error("Trop de redirections."));
+          return fetchProductHtml(
+            new URL(res.headers.location, url).href,
+            signal,
+            redirects + 1,
+          ).then(resolve, reject);
         }
-      }
-    }
-  }
-
-  return {
-    title,
-    description,
-    price,
-    currency,
-    imageUrl,
-    url,
-  };
-}
-
-/**
- * Amazon-specific scraper
- */
-function scrapeAmazon(html: string, url: string): ScrapedData {
-  const $ = cheerio.load(html);
-
-  // Amazon-specific selectors
-  const title = $('#productTitle').text().trim() ||
-                $('span[id="productTitle"]').text().trim() ||
-                null;
-
-  const description = $('#feature-bullets ul li').first().text().trim() ||
-                      $('meta[name="description"]').attr('content') ||
-                      null;
-
-  // Amazon price selectors (they change frequently)
-  let price: number | null = null;
-  let currency: string | null = null;
-
-  const priceWhole = $('.a-price-whole').first().text().trim();
-  const priceFraction = $('.a-price-fraction').first().text().trim();
-
-  if (priceWhole) {
-    const priceStr = priceWhole.replace(',', '') + (priceFraction || '00');
-    price = parseFloat(priceStr);
-    currency = 'USD'; // Default, could be enhanced to detect from page
-  }
-
-  // Fallback to other price selectors
-  if (price === null) {
-    const priceSelectors = [
-      '.a-price .a-offscreen',
-      '#priceblock_ourprice',
-      '#priceblock_dealprice',
-      '.a-price-whole',
-    ];
-
-    for (const selector of priceSelectors) {
-      const priceText = $(selector).first().text();
-      if (priceText) {
-        const extracted = extractPrice(priceText);
-        if (extracted.price !== null) {
-          price = extracted.price;
-          currency = extracted.currency;
-          break;
+        if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          return reject(
+            new Error(
+              "Cette boutique refuse la récupération automatique. Vous pouvez remplir la fiche manuellement.",
+            ),
+          );
         }
-      }
+        if (
+          !/text\/html|application\/xhtml\+xml/i.test(
+            res.headers["content-type"] || "",
+          )
+        ) {
+          res.resume();
+          return reject(
+            new Error("Ce lien ne correspond pas à une page produit."),
+          );
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        res.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > 3 * 1024 * 1024) {
+            res.destroy();
+            reject(new Error("Page trop volumineuse."));
+          } else chunks.push(chunk);
+        });
+        res.on("end", () =>
+          resolve({
+            html: Buffer.concat(chunks).toString("utf8"),
+            url: url.href,
+          }),
+        );
+        res.on("error", reject);
+      },
+    );
+    req.on("error", reject);
+  });
+}
+export function parsePrice(value: unknown): number | null {
+  if (typeof value === "number")
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== "string") return null;
+  let s = value.replace(/[\s\u00a0\u202f]/g, "").replace(/[^\d.,]/g, "");
+  if (!s) return null;
+  const comma = s.lastIndexOf(","),
+    dot = s.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0)
+    s =
+      comma > dot
+        ? s.replace(/\./g, "").replace(",", ".")
+        : s.replace(/,/g, "");
+  else if (comma >= 0)
+    s = /,\d{1,2}$/.test(s) ? s.replace(",", ".") : s.replace(/,/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+type JsonObject = Record<string, any>;
+function findProduct(value: unknown): JsonObject | null {
+  if (!value || typeof value !== "object") return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findProduct(item);
+      if (found) return found;
     }
+    return null;
   }
-
-  // Amazon images
-  const imageUrl = $('#landingImage').attr('src') ||
-                   $('#imgBlkFront').attr('src') ||
-                   $('img[data-old-hires]').attr('data-old-hires') ||
-                   $('meta[property="og:image"]').attr('content') ||
-                   null;
-
-  return {
-    title,
-    description,
-    price,
-    currency,
-    imageUrl,
-    url,
-  };
+  const obj = value as JsonObject;
+  const types = Array.isArray(obj["@type"]) ? obj["@type"] : [obj["@type"]];
+  if (
+    types.some(
+      (t: unknown) => typeof t === "string" && /(?:^|\/)Product$/.test(t),
+    )
+  )
+    return obj;
+  return findProduct(obj["@graph"]) || findProduct(obj.mainEntity);
 }
-
-/**
- * Target-specific scraper
- */
-function scrapeTarget(html: string, url: string): ScrapedData {
+export function parseProductHtml(html: string, url: string): ScrapedData {
   const $ = cheerio.load(html);
-
-  const title = $('h1[data-test="product-title"]').text().trim() ||
-                $('meta[property="og:title"]').attr('content') ||
-                null;
-
-  const description = $('div[data-test="item-details-description"]').text().trim() ||
-                      $('meta[property="og:description"]').attr('content') ||
-                      null;
-
-  let price: number | null = null;
-  let currency = 'USD';
-
-  const priceText = $('span[data-test="product-price"]').first().text() ||
-                    $('div[data-test="product-price"]').first().text();
-
-  if (priceText) {
-    const extracted = extractPrice(priceText);
-    price = extracted.price;
-    currency = extracted.currency || 'USD';
-  }
-
-  const imageUrl = $('img[data-test="product-image"]').attr('src') ||
-                   $('meta[property="og:image"]').attr('content') ||
-                   null;
-
-  return {
-    title,
-    description,
-    price,
-    currency,
-    imageUrl,
-    url,
+  const meta = (...selectors: string[]) => {
+    for (const selector of selectors) {
+      const value = $(selector).first().attr("content");
+      if (value) return value;
+    }
+    return null;
   };
-}
-
-/**
- * Walmart-specific scraper
- */
-function scrapeWalmart(html: string, url: string): ScrapedData {
-  const $ = cheerio.load(html);
-
-  const title = $('h1[itemprop="name"]').text().trim() ||
-                $('meta[property="og:title"]').attr('content') ||
-                null;
-
-  const description = $('div[itemprop="description"]').text().trim() ||
-                      $('meta[property="og:description"]').attr('content') ||
-                      null;
-
-  let price: number | null = null;
-  let currency = 'USD';
-
-  const priceText = $('span[itemprop="price"]').first().attr('content') ||
-                    $('span[itemprop="price"]').first().text() ||
-                    $('.price-characteristic').first().text();
-
-  if (priceText) {
-    const extracted = extractPrice(priceText);
-    price = extracted.price;
-    currency = extracted.currency || 'USD';
-  }
-
-  const imageUrl = $('img[itemprop="image"]').attr('src') ||
-                   $('meta[property="og:image"]').attr('content') ||
-                   null;
-
-  return {
-    title,
-    description,
-    price,
-    currency,
-    imageUrl,
-    url,
-  };
-}
-
-/**
- * Best Buy-specific scraper
- */
-function scrapeBestBuy(html: string, url: string): ScrapedData {
-  const $ = cheerio.load(html);
-
-  const title = $('h1.heading-5').first().text().trim() ||
-                $('meta[property="og:title"]').attr('content') ||
-                null;
-
-  const description = $('div.shop-product-description').first().text().trim() ||
-                      $('meta[property="og:description"]').attr('content') ||
-                      null;
-
-  let price: number | null = null;
-  let currency = 'USD';
-
-  const priceText = $('div[data-testid="customer-price"] span').first().text() ||
-                    $('.priceView-hero-price span').first().text();
-
-  if (priceText) {
-    const extracted = extractPrice(priceText);
-    price = extracted.price;
-    currency = extracted.currency || 'USD';
-  }
-
-  const imageUrl = $('img.primary-image').first().attr('src') ||
-                   $('meta[property="og:image"]').attr('content') ||
-                   null;
-
-  return {
-    title,
-    description,
-    price,
-    currency,
-    imageUrl,
-    url,
-  };
-}
-
-/**
- * Main scrape function - detects site and uses appropriate scraper
- */
-export async function scrapeUrl(url: string): Promise<ScrapedData> {
+  let product: JsonObject | null = null;
+  $('script[type="application/ld+json"]').each((_i, el) => {
+    if (product) return;
+    try {
+      product = findProduct(JSON.parse($(el).text()));
+    } catch {}
+  });
+  const p = product as JsonObject | null;
+  let offer = Array.isArray(p?.offers) ? p.offers[0] : p?.offers;
+  if (offer?.offers)
+    offer = Array.isArray(offer.offers) ? offer.offers[0] : offer.offers;
+  const amount =
+    offer?.price ??
+    offer?.lowPrice ??
+    offer?.priceSpecification?.price ??
+    meta(
+      'meta[property="product:price:amount"]',
+      'meta[property="og:price:amount"]',
+      'meta[itemprop="price"]',
+    ) ??
+    $('[itemprop="price"]').first().attr("content") ??
+    $(".a-price .a-offscreen, .product-price, .price").first().text();
+  const currencyRaw =
+    offer?.priceCurrency ??
+    offer?.priceSpecification?.priceCurrency ??
+    meta(
+      'meta[property="product:price:currency"]',
+      'meta[property="og:price:currency"]',
+      'meta[itemprop="priceCurrency"]',
+    );
+  // Never label an unknown foreign price as EUR: the person confirms it manually.
+  const currency =
+    typeof currencyRaw === "string" &&
+    /^[A-Z]{3}$/.test(currencyRaw.toUpperCase())
+      ? currencyRaw.toUpperCase()
+      : typeof amount === "string" && amount.includes("€")
+        ? "EUR"
+        : null;
+  const price = parsePrice(amount);
+  const image = Array.isArray(p?.image) ? p.image[0] : p?.image;
+  const imageString = typeof image === "string" ? image : image?.url;
+  let imageUrl: string | null = null;
   try {
-    // Normalize URL
-    const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
-    const urlObj = new URL(normalizedUrl);
-    const hostname = urlObj.hostname.toLowerCase();
-
-    // Fetch HTML
-    const html = await fetchHtml(normalizedUrl);
-
-    // Use site-specific scraper if available
-    if (hostname.includes('amazon.')) {
-      return scrapeAmazon(html, normalizedUrl);
-    } else if (hostname.includes('target.com')) {
-      return scrapeTarget(html, normalizedUrl);
-    } else if (hostname.includes('walmart.com')) {
-      return scrapeWalmart(html, normalizedUrl);
-    } else if (hostname.includes('bestbuy.com')) {
-      return scrapeBestBuy(html, normalizedUrl);
-    }
-
-    // Fallback to generic scraper
-    return scrapeGeneric(html, normalizedUrl);
-  } catch (error) {
-    throw new Error(`Scraping failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
+    const candidate = new URL(
+      imageString ||
+        meta('meta[property="og:image"]', 'meta[name="twitter:image"]') ||
+        "",
+      url,
+    );
+    if (
+      candidate.href !== url &&
+      ["http:", "https:"].includes(candidate.protocol)
+    )
+      imageUrl = candidate.href;
+  } catch {}
+  const clean = (value: unknown, max: number) =>
+    typeof value === "string"
+      ? $("<div>").html(value).text().trim().slice(0, max) || null
+      : null;
+  return {
+    title: clean(
+      p?.name || meta('meta[property="og:title"]') || $("title").text(),
+      200,
+    ),
+    description: clean(
+      p?.description ||
+        meta('meta[property="og:description"]', 'meta[name="description"]'),
+      3000,
+    ),
+    price: currency ? price : null,
+    currency,
+    imageUrl,
+    url,
+  };
+}
+export async function scrapeUrl(url: string) {
+  const page = await fetchProductHtml(url);
+  return parseProductHtml(page.html, page.url);
 }

@@ -1,13 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import { existsSync } from 'fs';
-import sharp from 'sharp';
+import { NextRequest, NextResponse } from "next/server";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
+import { existsSync } from "fs";
+import sharp from "sharp";
+import { randomUUID } from "node:crypto";
+import { requireUser, HttpError } from "@/lib/server";
 
 // Configuration
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+];
 
 // Resize configuration
 const MAX_WIDTH = 800;
@@ -16,35 +23,46 @@ const QUALITY = 85;
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const type = formData.get('type') as string; // 'wishlist' or 'item'
-
-    if (!file) {
+    const user = requireUser(request);
+    const UPLOAD_DIR = path.join(
+      process.env.DATA_DIR || path.join(process.cwd(), "data"),
+      "uploads",
+    );
+    const length = Number(request.headers.get("content-length") || 0);
+    if (length > MAX_FILE_SIZE + 65536)
       return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
+        { error: "Image trop volumineuse." },
+        { status: 413 },
+      );
+    const formData = await request.formData();
+    const file = formData.get("file") as File;
+    const type = formData.get("type") as string; // 'wishlist' or 'item'
+
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        { error: "Choisissez une image." },
+        { status: 400 },
       );
     }
 
     // Validate file type
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: `Invalid file type. Allowed types: ${ALLOWED_TYPES.join(', ')}` },
-        { status: 400 }
+        { error: "Format d’image non accepté." },
+        { status: 400 },
       );
     }
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB` },
-        { status: 400 }
+        { error: "Image trop volumineuse : 5 Mo maximum." },
+        { status: 400 },
       );
     }
 
     // Create upload directory if it doesn't exist
-    const typeDir = path.join(UPLOAD_DIR, type === 'wishlist' ? 'wishlists' : 'items');
+    const typeDir = path.join(UPLOAD_DIR, user.id);
     if (!existsSync(typeDir)) {
       // Create directory with 0775 permissions (rwxrwxr-x)
       await mkdir(typeDir, { recursive: true, mode: 0o775 });
@@ -52,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     // Generate unique filename (always use .webp for output)
     const timestamp = Date.now();
-    const filename = `${timestamp}-${Math.random().toString(36).substring(7)}.webp`;
+    const filename = `${randomUUID()}.webp`;
     const filepath = path.join(typeDir, filename);
 
     // Convert file to buffer
@@ -60,9 +78,12 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
 
     // Resize and optimize image
-    const processedImage = await sharp(buffer)
+    const processedImage = await sharp(buffer, {
+      limitInputPixels: 40000000,
+      animated: false,
+    })
       .resize(MAX_WIDTH, MAX_HEIGHT, {
-        fit: 'inside',
+        fit: "inside",
         withoutEnlargement: true,
       })
       .webp({ quality: QUALITY })
@@ -72,10 +93,8 @@ export async function POST(request: NextRequest) {
     // This respects the umask setting and ensures proper group access
     await writeFile(filepath, processedImage, { mode: 0o664 });
 
-    console.log(`Uploaded file: ${filepath}`);
-
     // Return the public URL (served from /uploads route)
-    const publicUrl = `/uploads/${type === 'wishlist' ? 'wishlists' : 'items'}/${filename}`;
+    const publicUrl = `/uploads/${user.id}/${filename}`;
 
     return NextResponse.json({
       success: true,
@@ -83,10 +102,15 @@ export async function POST(request: NextRequest) {
       filename,
     });
   } catch (error) {
-    console.error('Upload error:', error);
+    if (error instanceof HttpError)
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    console.error("Upload error:", error);
     return NextResponse.json(
-      { error: 'Failed to upload file' },
-      { status: 500 }
+      { error: "Image illisible ou envoi impossible." },
+      { status: 500 },
     );
   }
 }

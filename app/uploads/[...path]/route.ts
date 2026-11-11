@@ -1,79 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
-
-// Upload directory location
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
-
+import { NextRequest, NextResponse } from "next/server";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { eq, and, or } from "drizzle-orm";
+import { db, wishlists, wishlistItems } from "@/lib/db";
+import { session, visitorAllowed } from "@/lib/server";
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  r: NextRequest,
+  c: { params: Promise<{ path: string[] }> },
 ) {
+  const { path: segments } = await c.params;
+  if (
+    segments.length !== 2 ||
+    segments.some((s) => !/^[a-zA-Z0-9_-]+(?:\.webp)?$/.test(s))
+  )
+    return new NextResponse(null, { status: 404 });
+  const imageUrl = "/uploads/" + segments.join("/");
+  const user = session(r);
+  const ownDraft = user?.id === segments[0];
+  const listImage = db
+    .select()
+    .from(wishlists)
+    .where(
+      and(
+        eq(wishlists.imageUrl, imageUrl),
+        user
+          ? or(eq(wishlists.isPublic, true), eq(wishlists.ownerId, user.id))
+          : eq(wishlists.isPublic, true),
+      ),
+    )
+    .get();
+  const itemImage = db
+    .select()
+    .from(wishlistItems)
+    .innerJoin(wishlists, eq(wishlists.id, wishlistItems.wishlistId))
+    .where(
+      and(
+        eq(wishlistItems.imageUrl, imageUrl),
+        eq(wishlistItems.isArchived, false),
+        user
+          ? or(eq(wishlists.isPublic, true), eq(wishlists.ownerId, user.id))
+          : eq(wishlists.isPublic, true),
+      ),
+    )
+    .get();
+  if (!ownDraft && (!(listImage || itemImage) || !visitorAllowed(r)))
+    return new NextResponse(null, { status: 404 });
   try {
-    // Await params in Next.js 16+
-    const { path: pathSegments } = await params;
-
-    console.log('Upload request - pathSegments:', pathSegments);
-    console.log('UPLOAD_DIR:', UPLOAD_DIR);
-
-    // Get the file path from the URL
-    const filePath = path.join(UPLOAD_DIR, ...pathSegments);
-    console.log('Constructed filePath:', filePath);
-
-    // Security: Ensure the resolved path is within UPLOAD_DIR
-    const resolvedPath = path.resolve(filePath);
-    const resolvedUploadDir = path.resolve(UPLOAD_DIR);
-
-    console.log('Resolved path:', resolvedPath);
-    console.log('Resolved upload dir:', resolvedUploadDir);
-
-    if (!resolvedPath.startsWith(resolvedUploadDir)) {
-      console.log('Security check failed - path outside upload dir');
-      return NextResponse.json(
-        { error: 'Invalid file path' },
-        { status: 403 }
-      );
-    }
-
-    // Check if file exists
-    if (!existsSync(resolvedPath)) {
-      console.log('File not found at:', resolvedPath);
-      return NextResponse.json(
-        { error: 'File not found' },
-        { status: 404 }
-      );
-    }
-
-    console.log('File exists, serving...');
-
-    // Read the file
-    const fileBuffer = await readFile(resolvedPath);
-
-    // Determine content type based on file extension
-    const ext = path.extname(resolvedPath).toLowerCase();
-    const contentTypeMap: Record<string, string> = {
-      '.webp': 'image/webp',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-    };
-
-    const contentType = contentTypeMap[ext] || 'application/octet-stream';
-
-    // Return the file with appropriate headers
-    return new NextResponse(fileBuffer, {
+    const base = path.resolve(
+      process.env.DATA_DIR || path.join(process.cwd(), "data"),
+      "uploads",
+    );
+    const file = path.resolve(base, ...segments);
+    if (!file.startsWith(base + path.sep))
+      return new NextResponse(null, { status: 404 });
+    return new NextResponse(await readFile(file), {
       headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        "Content-Type": "image/webp",
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
       },
     });
-  } catch (error) {
-    console.error('Error serving file:', error);
-    return NextResponse.json(
-      { error: 'Failed to serve file' },
-      { status: 500 }
-    );
+  } catch {
+    return new NextResponse(null, { status: 404 });
   }
 }

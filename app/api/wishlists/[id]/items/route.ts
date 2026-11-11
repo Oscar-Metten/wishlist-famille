@@ -1,166 +1,59 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { eq, and, desc } from 'drizzle-orm';
-import { db, wishlistItems, wishlists } from '@/lib/db';
-import { verifyAccessToken } from '@/lib/auth/utils';
-
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-
-    // Check for auth token
-    const token = request.cookies.get('access_token')?.value;
-    const payload = token ? verifyAccessToken(token) : null;
-    const isAuthenticated = payload !== null;
-
-    // Check if wishlist exists
-    const wishlist = await db
-      .select()
-      .from(wishlists)
-      .where(eq(wishlists.id, id))
-      .limit(1);
-
-    if (wishlist.length === 0) {
-      return NextResponse.json(
-        { error: 'Wishlist not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check permissions
-    if (!wishlist[0].isPublic && !isAuthenticated) {
-      return NextResponse.json(
-        { error: 'This wishlist is private' },
-        { status: 403 }
-      );
-    }
-
-    // Get all items (exclude archived unless authenticated)
-    const items = await db
+import { NextRequest } from "next/server";
+import { db, wishlistItems, wishlists } from "@/lib/db";
+import { eq, and } from "drizzle-orm";
+import {
+  endpoint,
+  requireUser,
+  ownList,
+  session,
+  requireVisitor,
+  safeItem,
+  itemData,
+  fail,
+} from "@/lib/server";
+type Context = { params: Promise<{ id: string }> };
+export async function GET(r: NextRequest, c: Context) {
+  return endpoint(async () => {
+    const { id } = await c.params;
+    const list = db.select().from(wishlists).where(eq(wishlists.id, id)).get();
+    const owner = !!list && session(r)?.id === list.ownerId;
+    if (!list || (!owner && !list.isPublic)) fail(404, "Liste introuvable.");
+    if (!owner) requireVisitor(r);
+    const manage = owner && r.nextUrl.searchParams.get("manage") === "1";
+    const items = db
       .select()
       .from(wishlistItems)
       .where(
-        isAuthenticated
+        manage
           ? eq(wishlistItems.wishlistId, id)
           : and(
               eq(wishlistItems.wishlistId, id),
-              eq(wishlistItems.isArchived, false)
-            )
+              eq(wishlistItems.isArchived, false),
+            ),
       )
-      .orderBy(wishlistItems.sortOrder);
-
-    // Return items
-    const responseItems = items;
-
-    return NextResponse.json({
+      .orderBy(wishlistItems.sortOrder)
+      .all();
+    return {
       success: true,
-      items: responseItems,
-    });
-  } catch (error) {
-    console.error('Error fetching items:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch items' },
-      { status: 500 }
-    );
-  }
+      isOwner: owner,
+      items: items.map((i) => safeItem(i, r, owner)),
+    };
+  });
 }
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const token = request.cookies.get('access_token')?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      );
-    }
-
-    const payload = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json(
-        { error: 'Invalid or expired token' },
-        { status: 401 }
-      );
-    }
-
-    const { id } = await params;
-    const body = await request.json();
-    const {
-      name,
-      description,
-      price,
-      currency,
-      quantity,
-      imageUrl,
-      purchaseUrls,
-    } = body;
-
-    // Validation
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Item name is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check if wishlist exists
-    const wishlist = await db
-      .select()
-      .from(wishlists)
-      .where(eq(wishlists.id, id))
-      .limit(1);
-
-    if (wishlist.length === 0) {
-      return NextResponse.json(
-        { error: 'Wishlist not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get the highest sortOrder value to append the new item at the end
-    const lastItem = await db
+export async function POST(r: NextRequest, c: Context) {
+  return endpoint(async () => {
+    const list = ownList(requireUser(r), (await c.params).id),
+      data = itemData(await r.json());
+    const count = db
       .select()
       .from(wishlistItems)
-      .where(eq(wishlistItems.wishlistId, id))
-      .orderBy(desc(wishlistItems.sortOrder))
-      .limit(1);
-
-    const nextSortOrder = lastItem.length > 0 ? lastItem[0].sortOrder + 1 : 0;
-
-    // Create item
-    const newItem = await db
+      .where(eq(wishlistItems.wishlistId, list.id))
+      .all().length;
+    const item = db
       .insert(wishlistItems)
-      .values({
-        wishlistId: id,
-        name,
-        description: description || null,
-        price: price || null,
-        currency: currency || 'USD',
-        quantity: quantity || 1,
-        imageUrl: imageUrl || null,
-        purchaseUrls: purchaseUrls || null,
-        sortOrder: nextSortOrder,
-      })
-      .returning();
-
-    return NextResponse.json(
-      {
-        success: true,
-        item: newItem[0],
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error('Error creating item:', error);
-    return NextResponse.json(
-      { error: 'Failed to create item' },
-      { status: 500 }
-    );
-  }
+      .values({ ...data, wishlistId: list.id, sortOrder: count })
+      .returning()
+      .get();
+    return { success: true, item: safeItem(item!, r, true) };
+  });
 }

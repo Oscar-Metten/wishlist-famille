@@ -1,26 +1,26 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Header from '@/components/header';
-import Footer from '@/components/footer';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Header from "@/components/header";
+import Footer from "@/components/footer";
 
 export default function LockPage() {
   const router = useRouter();
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/lock', {
-        method: 'POST',
+      const response = await fetch("/api/lock", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ password }),
       });
@@ -28,16 +28,16 @@ export default function LockPage() {
       const data = await response.json();
 
       if (response.ok) {
-        // Password verified, redirect to home
-        router.push('/');
+        // Mot de passe verified, redirect to home
+        router.push("/");
         router.refresh();
       } else {
-        setError(data.error || 'Incorrect password');
-        setPassword('');
+        setError(data.error || "Mot de passe incorrect.");
+        setPassword("");
       }
     } catch (err) {
-      setError('Failed to verify password. Please try again.');
-      console.error('Lock verification error:', err);
+      setError("Impossible de vérifier le mot de passe. Réessayez.");
+      console.error("Lock verification error:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -46,8 +46,8 @@ export default function LockPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header
-        title="Password Required"
-        subtitle="Please enter the password to access this site"
+        title="Accès aux listes de la famille"
+        subtitle="Saisissez le mot de passe familial pour consulter les listes."
       />
 
       <div className="max-w-md mx-auto py-12 px-4 sm:px-6 lg:px-8">
@@ -61,8 +61,11 @@ export default function LockPage() {
               )}
 
               <div>
-                <label htmlFor="password" className="block text-base font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Password
+                <label
+                  htmlFor="password"
+                  className="block text-base font-medium text-gray-700 dark:text-gray-300 mb-2"
+                >
+                  Mot de passe
                 </label>
                 <input
                   type="password"
@@ -72,7 +75,7 @@ export default function LockPage() {
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white text-lg"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
+                  placeholder="Mot de passe familial"
                   disabled={isSubmitting}
                 />
               </div>
@@ -82,7 +85,7 @@ export default function LockPage() {
                 disabled={isSubmitting}
                 className="w-full px-6 py-3 text-lg font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Verifying...' : 'Submit'}
+                {isSubmitting ? "Vérification…" : "Accéder aux listes"}
               </button>
             </form>
           </div>

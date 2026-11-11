@@ -1,6 +1,6 @@
 // API client for Next.js API routes
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = "/api";
 
 export interface ApiError {
   message: string;
@@ -9,10 +9,13 @@ export interface ApiError {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'An error occurred' }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: "An error occurred" }));
     // Extract error message from various possible response formats
-    const message = error.error || error.message || 'An error occurred';
-    console.error('API Error:', { status: response.status, message, fullError: error });
+    const message = error.error || error.message || "An error occurred";
+    if (response.status >= 500)
+      console.error("Erreur du serveur:", response.status, message);
     throw { message, status: response.status } as ApiError;
   }
 
@@ -21,44 +24,55 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return text ? JSON.parse(text) : ({} as T);
 }
 
+export interface SessionUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+}
+
 // Auth API
 export const authApi = {
   async login(username: string, password: string) {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password }),
     });
-    return handleResponse<{ accessToken: string; refreshToken: string }>(response);
+    return handleResponse<{ accessToken: string; refreshToken: string }>(
+      response,
+    );
   },
 
   async logout() {
     const response = await fetch(`${API_BASE_URL}/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
+      method: "POST",
+      credentials: "include",
     });
     return handleResponse<void>(response);
   },
 
   async refresh() {
     const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
+      method: "POST",
+      credentials: "include",
     });
     return handleResponse<{ accessToken: string }>(response);
   },
 
   async me() {
     const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    return handleResponse<{ username: string }>(response);
+    const data = await handleResponse<{ user: SessionUser }>(response);
+    return data.user;
   },
 };
 
 // Wishlist types
 export interface Wishlist {
+  isOwner?: boolean;
   id: string;
   name: string;
   slug: string;
@@ -72,6 +86,7 @@ export interface Wishlist {
 }
 
 export interface Item {
+  canCancel?: boolean;
   id: string;
   wishlistId: string;
   name: string;
@@ -95,120 +110,150 @@ export interface Item {
 export const wishlistsApi = {
   async getAll() {
     const response = await fetch(`${API_BASE_URL}/wishlists`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    const data = await handleResponse<{ success: boolean; wishlists: Wishlist[] }>(response);
+    const data = await handleResponse<{
+      success: boolean;
+      wishlists: Wishlist[];
+    }>(response);
     return data.wishlists;
   },
 
   async getAllPublic() {
     const response = await fetch(`${API_BASE_URL}/public/wishlists`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    const data = await handleResponse<{ success: boolean; wishlists: Wishlist[] }>(response);
+    const data = await handleResponse<{
+      success: boolean;
+      wishlists: Wishlist[];
+    }>(response);
     return data.wishlists;
   },
 
   async getOne(id: string) {
     const response = await fetch(`${API_BASE_URL}/wishlists/${id}`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    const result = await handleResponse<{ success: boolean; wishlist: Wishlist }>(response);
+    const result = await handleResponse<{
+      success: boolean;
+      wishlist: Wishlist;
+    }>(response);
     return result.wishlist;
   },
 
   async getBySlug(slug: string) {
     const response = await fetch(`${API_BASE_URL}/${slug}`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    const result = await handleResponse<{ success: boolean; wishlist: Wishlist }>(response);
-    return result.wishlist;
+    const result = await handleResponse<{
+      success: boolean;
+      wishlist: Wishlist;
+      isOwner: boolean;
+    }>(response);
+    return { ...result.wishlist, isOwner: result.isOwner };
   },
 
   async create(data: Partial<Wishlist>) {
     const response = await fetch(`${API_BASE_URL}/wishlists`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify(data),
     });
-    const result = await handleResponse<{ success: boolean; wishlist: Wishlist }>(response);
+    const result = await handleResponse<{
+      success: boolean;
+      wishlist: Wishlist;
+    }>(response);
     return result.wishlist;
   },
 
   async update(id: string, data: Partial<Wishlist>) {
     const response = await fetch(`${API_BASE_URL}/wishlists/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify(data),
     });
-    const result = await handleResponse<{ success: boolean; wishlist: Wishlist }>(response);
+    const result = await handleResponse<{
+      success: boolean;
+      wishlist: Wishlist;
+    }>(response);
     return result.wishlist;
   },
 
   async delete(id: string) {
     const response = await fetch(`${API_BASE_URL}/wishlists/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
+      method: "DELETE",
+      credentials: "include",
     });
     return handleResponse<void>(response);
   },
 
   async reorder(id: string, newSortOrder: number) {
     const response = await fetch(`${API_BASE_URL}/wishlists/${id}/reorder`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify({ newSortOrder }),
     });
-    const result = await handleResponse<{ success: boolean; wishlist: Wishlist }>(response);
+    const result = await handleResponse<{
+      success: boolean;
+      wishlist: Wishlist;
+    }>(response);
     return result.wishlist;
   },
 };
 
 // Items API
 export const itemsApi = {
-  async getAll(wishlistId: string) {
-    const response = await fetch(`${API_BASE_URL}/wishlists/${wishlistId}/items`, {
-      credentials: 'include',
-    });
-    const result = await handleResponse<{ success: boolean; items: Item[] }>(response);
+  async getAll(wishlistId: string, manage = false) {
+    const response = await fetch(
+      `${API_BASE_URL}/wishlists/${wishlistId}/items${manage ? "?manage=1" : ""}`,
+      {
+        credentials: "include",
+      },
+    );
+    const result = await handleResponse<{ success: boolean; items: Item[] }>(
+      response,
+    );
     return result.items;
   },
 
   async getOne(id: string) {
     const response = await fetch(`${API_BASE_URL}/items/${id}`, {
-      credentials: 'include',
+      credentials: "include",
     });
     return handleResponse<Item>(response);
   },
 
   async create(wishlistId: string, data: Partial<Item>) {
-    const response = await fetch(`${API_BASE_URL}/wishlists/${wishlistId}/items`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const response = await fetch(
+      `${API_BASE_URL}/wishlists/${wishlistId}/items`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(data),
       },
-      credentials: 'include',
-      body: JSON.stringify(data),
-    });
+    );
     return handleResponse<Item>(response);
   },
 
   async update(id: string, data: Partial<Item>) {
     const response = await fetch(`${API_BASE_URL}/items/${id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify(data),
     });
     return handleResponse<Item>(response);
@@ -216,22 +261,24 @@ export const itemsApi = {
 
   async delete(id: string) {
     const response = await fetch(`${API_BASE_URL}/items/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
+      method: "DELETE",
+      credentials: "include",
     });
     return handleResponse<void>(response);
   },
 
   async reorder(id: string, newSortOrder: number) {
     const response = await fetch(`${API_BASE_URL}/items/${id}/reorder`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify({ newSortOrder }),
     });
-    const result = await handleResponse<{ success: boolean; item: Item }>(response);
+    const result = await handleResponse<{ success: boolean; item: Item }>(
+      response,
+    );
     return result.item;
   },
 };
@@ -239,21 +286,27 @@ export const itemsApi = {
 // Claiming API (public)
 export const claimingApi = {
   async claim(itemId: string, name?: string, note?: string) {
-    const response = await fetch(`${API_BASE_URL}/public/items/${itemId}/claim`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ name, note }),
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/public/items/${itemId}/claim`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name, note }),
+      },
+    );
     return handleResponse<{ claimToken: string; message: string }>(response);
   },
 
   async unclaim(itemId: string) {
-    const response = await fetch(`${API_BASE_URL}/public/items/${itemId}/unclaim`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-    });
+    const response = await fetch(
+      `${API_BASE_URL}/public/items/${itemId}/unclaim`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      },
+    );
     return handleResponse<{ success: boolean; message: string }>(response);
   },
 };
@@ -270,14 +323,15 @@ export interface ScrapedData {
 export const scrapingApi = {
   async scrapeUrl(url: string) {
     const response = await fetch(`${API_BASE_URL}/scrape`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify({ url }),
     });
-    return handleResponse<ScrapedData>(response);
+    const result = await handleResponse<{ data: ScrapedData }>(response);
+    return result.data;
   },
 };
 
@@ -287,24 +341,28 @@ export interface Settings {
   homepageSubtext: string;
   passwordLockEnabled?: boolean;
   passwordLock?: string;
+  unlocked?: boolean;
 }
 
 export const settingsApi = {
   async getSettings() {
     const response = await fetch(`${API_BASE_URL}/settings`, {
-      credentials: 'include',
+      credentials: "include",
     });
-    const result = await handleResponse<{ success: boolean; settings: Settings }>(response);
+    const result = await handleResponse<{
+      success: boolean;
+      settings: Settings;
+    }>(response);
     return result.settings;
   },
 
   async updateSettings(settings: Partial<Settings>) {
     const response = await fetch(`${API_BASE_URL}/settings`, {
-      method: 'PUT',
+      method: "PUT",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
-      credentials: 'include',
+      credentials: "include",
       body: JSON.stringify(settings),
     });
     return handleResponse<{ success: boolean; message: string }>(response);

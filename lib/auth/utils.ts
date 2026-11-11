@@ -1,143 +1,84 @@
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
-
-// Initialize secrets (auto-generate if not provided)
-const secrets = initializeSecrets();
-
-// Token expiry times
-const TOKEN_EXPIRY = '72h';
-const REFRESH_TOKEN_EXPIRY = '30d';
-
-/**
- * Initialize JWT secrets - auto-generate and persist if not provided in environment
- */
-function initializeSecrets(): { secret: string; refreshSecret: string } {
-  const dataDir = path.join(process.cwd(), 'data');
-  const secretsFile = path.join(dataDir, 'secrets.json');
-
-  // If provided in environment, use those
+import jwt from "jsonwebtoken";
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { db, users } from "../db";
+import { eq } from "drizzle-orm";
+let secret: string;
+function getSecret() {
+  if (secret) return secret;
   if (process.env.SECRET) {
-    return {
-      secret: process.env.SECRET,
-      refreshSecret: process.env.REFRESH_SECRET || process.env.SECRET, // Use same secret if refresh not provided
-    };
+    if (process.env.SECRET.length < 32)
+      throw new Error("SECRET doit contenir au moins 32 caractères.");
+    return (secret = process.env.SECRET);
   }
-
-  // Ensure data directory exists
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  // Try to load existing secrets
-  if (fs.existsSync(secretsFile)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(secretsFile, 'utf-8'));
-      return data;
-    } catch {
-      // Failed to load, will generate new ones
-    }
-  }
-
-  // Generate new cryptographically secure secrets (512 bits each)
-  const newSecrets = {
-    secret: crypto.randomBytes(64).toString('hex'),
-    refreshSecret: crypto.randomBytes(64).toString('hex'),
-  };
-
-  // Save to file with restricted permissions
-  try {
-    fs.writeFileSync(secretsFile, JSON.stringify(newSecrets, null, 2), { mode: 0o600 });
-  } catch (error) {
-    console.error('⚠️  Failed to save secrets file:', error);
-    console.error('⚠️  WARNING: Using in-memory secrets - tokens will be invalid after restart!');
-  }
-
-  return newSecrets;
+  const dir = process.env.DATA_DIR || path.join(process.cwd(), "data");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "family-session-secret");
+  if (fs.existsSync(file)) return (secret = fs.readFileSync(file, "utf8"));
+  secret = randomBytes(64).toString("hex");
+  fs.writeFileSync(file, secret, { mode: 0o600, flag: "wx" });
+  return secret;
 }
-
 export interface TokenPayload {
+  id: string;
   username: string;
-  type: 'access' | 'refresh';
+  displayName: string;
+  role: string;
+  authVersion: number;
+  type?: string;
 }
-
-/**
- * Generate an access token
- */
-export function generateAccessToken(username: string): string {
+export function generateAccessToken(user: TokenPayload) {
   return jwt.sign(
-    { username, type: 'access' } as TokenPayload,
-    secrets.secret,
-    { expiresIn: TOKEN_EXPIRY } as jwt.SignOptions
+    { id: user.id, authVersion: user.authVersion, type: "access" },
+    getSecret(),
+    { expiresIn: "12h" },
   );
 }
-
-/**
- * Generate a refresh token
- */
-export function generateRefreshToken(username: string): string {
+export function generateRefreshToken(user: TokenPayload) {
   return jwt.sign(
-    { username, type: 'refresh' } as TokenPayload,
-    secrets.refreshSecret,
-    { expiresIn: REFRESH_TOKEN_EXPIRY } as jwt.SignOptions
+    { id: user.id, authVersion: user.authVersion, type: "refresh" },
+    getSecret(),
+    { expiresIn: "30d" },
   );
 }
-
-/**
- * Verify an access token
- */
-export function verifyAccessToken(token: string): TokenPayload | null {
+function verify(token: string, type: string): TokenPayload | null {
   try {
-    const payload = jwt.verify(token, secrets.secret) as TokenPayload;
-    if (payload.type !== 'access') {
-      return null;
-    }
-    return payload;
-  } catch (error) {
+    const payload = jwt.verify(token, getSecret()) as {
+      id: string;
+      authVersion: number;
+      type: string;
+    };
+    if (payload.type !== type) return null;
+    const user = db.select().from(users).where(eq(users.id, payload.id)).get();
+    if (!user || user.authVersion !== payload.authVersion) return null;
+    const { passwordHash: _, ...safe } = user;
+    return safe;
+  } catch {
     return null;
   }
 }
-
-/**
- * Verify a refresh token
- */
-export function verifyRefreshToken(token: string): TokenPayload | null {
-  try {
-    const payload = jwt.verify(token, secrets.refreshSecret) as TokenPayload;
-    if (payload.type !== 'refresh') {
-      return null;
-    }
-    return payload;
-  } catch (error) {
-    return null;
-  }
+export const verifyAccessToken = (token: string) => verify(token, "access");
+export const verifyRefreshToken = (token: string) => verify(token, "refresh");
+export function signSiteAccess(hash: string) {
+  return jwt.sign({ type: "visitor", hash }, getSecret(), { expiresIn: "7d" });
 }
-
-/**
- * Validate admin credentials against environment variables
- */
-export function validateAdminCredentials(username: string, password: string): boolean {
-  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-  const adminPassword = process.env.ADMIN_PASSWORD;
-
-  if (!adminPassword) {
-    console.error('❌ ADMIN_PASSWORD not set in environment variables');
+export function verifySiteAccess(token: string, hash: string) {
+  try {
+    const p = jwt.verify(token, getSecret()) as { type: string; hash: string };
+    return p.type === "visitor" && p.hash === hash;
+  } catch {
     return false;
   }
-
-  return username === adminUsername && password === adminPassword;
 }
-
-export function isSecureCookie(request: { headers: { get(name: string): string | null }; url: string }): boolean {
-  if (process.env.COOKIE_SECURE !== undefined) {
-    return process.env.COOKIE_SECURE === 'true';
-  }
-  if (process.env.NODE_ENV === 'production') {
-    return (
-      request.headers.get('x-forwarded-proto') === 'https' ||
-      request.url.startsWith('https://')
-    );
-  }
-  return false;
+export function isSecureCookie(request: {
+  url: string;
+  headers: { get(name: string): string | null };
+}) {
+  if (process.env.COOKIE_SECURE !== undefined)
+    return process.env.COOKIE_SECURE === "true";
+  return (
+    request.headers.get("x-forwarded-proto") === "https" ||
+    request.url.startsWith("https:")
+  );
 }

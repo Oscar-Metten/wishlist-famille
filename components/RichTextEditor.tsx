@@ -1,42 +1,59 @@
-'use client';
+"use client";
 
-import { LexicalComposer } from '@lexical/react/LexicalComposer';
-import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
-import { ContentEditable } from '@lexical/react/LexicalContentEditable';
-import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
-import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
-import { ListPlugin } from '@lexical/react/LexicalListPlugin';
-import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
-import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $generateHtmlFromNodes, $generateNodesFromDOM } from '@lexical/html';
-import { $getRoot, $insertNodes, $getSelection, $isRangeSelection, FORMAT_TEXT_COMMAND } from 'lexical';
-import { ListNode, ListItemNode } from '@lexical/list';
-import { LinkNode, AutoLinkNode, $createLinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
-import { HeadingNode, QuoteNode, $createHeadingNode } from '@lexical/rich-text';
-import { $setBlocksType } from '@lexical/selection';
-import { useEffect, useState } from 'react';
+import { LexicalComposer } from "@lexical/react/LexicalComposer";
+import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
+import { ContentEditable } from "@lexical/react/LexicalContentEditable";
+import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { ListPlugin } from "@lexical/react/LexicalListPlugin";
+import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
+import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
+import {
+  $getRoot,
+  $insertNodes,
+  $createTextNode,
+  $getSelection,
+  $isRangeSelection,
+  FORMAT_TEXT_COMMAND,
+} from "lexical";
+import {
+  INSERT_UNORDERED_LIST_COMMAND,
+  INSERT_ORDERED_LIST_COMMAND,
+  ListNode,
+  ListItemNode,
+} from "@lexical/list";
+import {
+  LinkNode,
+  AutoLinkNode,
+  $createLinkNode,
+  TOGGLE_LINK_COMMAND,
+} from "@lexical/link";
+import { HeadingNode, QuoteNode, $createHeadingNode } from "@lexical/rich-text";
+import { $setBlocksType } from "@lexical/selection";
+import { useEffect, useState } from "react";
 
 // Toolbar Component
 function ToolbarPlugin() {
   const [editor] = useLexicalComposerContext();
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkText, setLinkText] = useState("");
 
   const formatBold = () => {
-    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold');
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold");
   };
 
   const formatItalic = () => {
-    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic');
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic");
   };
 
   const formatUnderline = () => {
-    editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline');
+    editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline");
   };
 
-  const formatHeading = (level: 'h2' | 'h3') => {
+  const formatHeading = (level: "h2" | "h3") => {
     editor.update(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
@@ -46,11 +63,11 @@ function ToolbarPlugin() {
   };
 
   const formatBulletList = () => {
-    editor.dispatchCommand({ type: 'INSERT_UNORDERED_LIST_COMMAND' } as any, undefined);
+    editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined);
   };
 
   const formatNumberedList = () => {
-    editor.dispatchCommand({ type: 'INSERT_ORDERED_LIST_COMMAND' } as any, undefined);
+    editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined);
   };
 
   const openLinkModal = () => {
@@ -62,7 +79,7 @@ function ToolbarPlugin() {
         setLinkText(text);
       }
     });
-    setLinkUrl('');
+    setLinkUrl("");
     setShowLinkModal(true);
   };
 
@@ -78,15 +95,15 @@ function ToolbarPlugin() {
         } else if (linkText) {
           // If no selection but we have link text, insert new link
           const linkNode = $createLinkNode(linkUrl);
-          linkNode.append($getRoot().getFirstChild() as any);
+          linkNode.append($createTextNode(linkText));
           selection.insertNodes([linkNode]);
         }
       }
     });
 
     setShowLinkModal(false);
-    setLinkUrl('');
-    setLinkText('');
+    setLinkUrl("");
+    setLinkText("");
   };
 
   return (
@@ -96,7 +113,7 @@ function ToolbarPlugin() {
           type="button"
           onClick={formatBold}
           className="px-3 py-1.5 text-sm font-bold hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Bold"
+          title="Gras"
         >
           B
         </button>
@@ -104,7 +121,7 @@ function ToolbarPlugin() {
           type="button"
           onClick={formatItalic}
           className="px-3 py-1.5 text-sm italic hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Italic"
+          title="Italique"
         >
           I
         </button>
@@ -112,24 +129,24 @@ function ToolbarPlugin() {
           type="button"
           onClick={formatUnderline}
           className="px-3 py-1.5 text-sm underline hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Underline"
+          title="Souligné"
         >
           U
         </button>
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
         <button
           type="button"
-          onClick={() => formatHeading('h2')}
+          onClick={() => formatHeading("h2")}
           className="px-3 py-1.5 text-sm font-bold hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Heading 2"
+          title="Titre de niveau 2"
         >
           H2
         </button>
         <button
           type="button"
-          onClick={() => formatHeading('h3')}
+          onClick={() => formatHeading("h3")}
           className="px-3 py-1.5 text-sm font-semibold hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Heading 3"
+          title="Titre de niveau 3"
         >
           H3
         </button>
@@ -138,44 +155,52 @@ function ToolbarPlugin() {
           type="button"
           onClick={formatBulletList}
           className="px-3 py-1.5 text-sm hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Bullet List"
+          title="Liste à puces"
         >
-          • List
+          • Liste
         </button>
         <button
           type="button"
           onClick={formatNumberedList}
           className="px-3 py-1.5 text-sm hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Numbered List"
+          title="Liste numérotée"
         >
-          1. List
+          1. Liste
         </button>
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
         <button
           type="button"
           onClick={openLinkModal}
           className="px-3 py-1.5 text-sm hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
-          title="Insert Link"
+          title="Insérer un lien"
         >
-          🔗 Link
+          🔗 Lien
         </button>
       </div>
 
       {/* Link Modal */}
       {showLinkModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowLinkModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Insert Link</h3>
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowLinkModal(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Insérer un lien
+            </h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Link Text {!linkText && '(optional)'}
+                  Texte du lien {!linkText && "(facultatif)"}
                 </label>
                 <input
                   type="text"
                   value={linkText}
                   onChange={(e) => setLinkText(e.target.value)}
-                  placeholder="Click here"
+                  placeholder="Texte du lien"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
                 />
               </div>
@@ -199,7 +224,7 @@ function ToolbarPlugin() {
                 onClick={() => setShowLinkModal(false)}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
-                Cancel
+                Annuler
               </button>
               <button
                 type="button"
@@ -207,7 +232,7 @@ function ToolbarPlugin() {
                 disabled={!linkUrl}
                 className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Insert Link
+                Insérer un lien
               </button>
             </div>
           </div>
@@ -225,7 +250,7 @@ function InitialContentPlugin({ html }: { html?: string }) {
     if (html) {
       editor.update(() => {
         const parser = new DOMParser();
-        const dom = parser.parseFromString(html, 'text/html');
+        const dom = parser.parseFromString(html, "text/html");
         const nodes = $generateNodesFromDOM(editor, dom);
         $getRoot().clear();
         $getRoot().select();
@@ -243,24 +268,28 @@ interface RichTextEditorProps {
   placeholder?: string;
 }
 
-export default function RichTextEditor({ value, onChange, placeholder = 'Enter text...' }: RichTextEditorProps) {
+export default function RichTextEditor({
+  value,
+  onChange,
+  placeholder = "Écrivez ici…",
+}: RichTextEditorProps) {
   const initialConfig = {
-    namespace: 'WishlistPreferences',
+    namespace: "WishlistPreferences",
     theme: {
-      paragraph: 'mb-2',
+      paragraph: "mb-2",
       heading: {
-        h2: 'text-2xl font-bold mb-3 mt-4 text-gray-900 dark:text-white',
-        h3: 'text-xl font-semibold mb-2 mt-3 text-gray-900 dark:text-white',
+        h2: "text-2xl font-bold mb-3 mt-4 text-gray-900 dark:text-white",
+        h3: "text-xl font-semibold mb-2 mt-3 text-gray-900 dark:text-white",
       },
       list: {
-        ul: 'list-disc list-inside mb-2',
-        ol: 'list-decimal list-inside mb-2',
+        ul: "list-disc list-inside mb-2",
+        ol: "list-decimal list-inside mb-2",
       },
-      link: 'text-indigo-600 dark:text-indigo-400 hover:underline',
+      link: "text-indigo-600 dark:text-indigo-400 hover:underline",
       text: {
-        bold: 'font-bold',
-        italic: 'italic',
-        underline: 'underline',
+        bold: "font-bold",
+        italic: "italic",
+        underline: "underline",
       },
     },
     onError: (error: Error) => {

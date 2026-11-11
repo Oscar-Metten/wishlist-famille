@@ -1,38 +1,43 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { type Settings } from '@/lib/api';
+import { useState } from "react";
+import { type Settings } from "@/lib/api";
 
 interface SettingsSectionProps {
   settings: Settings;
   onUpdate: (settings: Settings) => Promise<void>;
 }
 
-export default function SettingsSection({ settings, onUpdate }: SettingsSectionProps) {
+export default function SettingsSection({
+  settings,
+  onUpdate,
+}: SettingsSectionProps) {
   const [editingSettings, setEditingSettings] = useState(false);
   const [settingsForm, setSettingsForm] = useState<Settings>(settings);
-  const [settingsError, setSettingsError] = useState('');
+  const [settingsError, setSettingsError] = useState("");
 
   const startEditingSettings = () => {
     setEditingSettings(true);
     setSettingsForm({ ...settings });
-    setSettingsError('');
+    setSettingsError("");
   };
 
   const cancelEditingSettings = () => {
     setEditingSettings(false);
-    setSettingsError('');
+    setSettingsError("");
   };
 
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSettingsError('');
+    setSettingsError("");
 
     try {
       await onUpdate(settingsForm);
       setEditingSettings(false);
     } catch (error: any) {
-      setSettingsError(error.message || 'Failed to update settings');
+      setSettingsError(
+        error.message || "Impossible d’enregistrer les réglages.",
+      );
     }
   };
 
@@ -42,14 +47,14 @@ export default function SettingsSection({ settings, onUpdate }: SettingsSectionP
         <div className="p-5 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Site Settings
+              Personnaliser le site
             </h2>
             {!editingSettings && (
               <button
                 onClick={startEditingSettings}
                 className="px-4 py-2 text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors cursor-pointer"
               >
-                Edit Settings
+                Modifier les réglages
               </button>
             )}
           </div>
@@ -64,7 +69,7 @@ export default function SettingsSection({ settings, onUpdate }: SettingsSectionP
             <form onSubmit={handleUpdateSettings} className="space-y-4">
               <div>
                 <label className="block text-base font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Site Title
+                  Titre du site
                 </label>
                 <input
                   type="text"
@@ -72,29 +77,35 @@ export default function SettingsSection({ settings, onUpdate }: SettingsSectionP
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
                   value={settingsForm.siteTitle}
                   onChange={(e) =>
-                    setSettingsForm((prev) => ({ ...prev, siteTitle: e.target.value }))
+                    setSettingsForm((prev) => ({
+                      ...prev,
+                      siteTitle: e.target.value,
+                    }))
                   }
                   placeholder="Wishlist"
                 />
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  This is used for the page title and homepage header
+                  Affiché dans l’onglet du navigateur et en haut de l’accueil.
                 </p>
               </div>
               <div>
                 <label className="block text-base font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Homepage Subtext
+                  Texte d’accueil
                 </label>
                 <textarea
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
                   value={settingsForm.homepageSubtext}
                   onChange={(e) =>
-                    setSettingsForm((prev) => ({ ...prev, homepageSubtext: e.target.value }))
+                    setSettingsForm((prev) => ({
+                      ...prev,
+                      homepageSubtext: e.target.value,
+                    }))
                   }
-                  placeholder="Browse and explore available wishlists"
+                  placeholder="Des idées pour faire plaisir à chacun."
                 />
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  This appears below the title on the homepage
+                  Affiché sous le titre de l’accueil.
                 </p>
               </div>
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -105,32 +116,42 @@ export default function SettingsSection({ settings, onUpdate }: SettingsSectionP
                     className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                     checked={settingsForm.passwordLockEnabled}
                     onChange={(e) =>
-                      setSettingsForm((prev) => ({ ...prev, passwordLockEnabled: e.target.checked }))
+                      setSettingsForm((prev) => ({
+                        ...prev,
+                        passwordLockEnabled: e.target.checked,
+                      }))
                     }
                   />
-                  <label htmlFor="passwordLockEnabled" className="ml-2 block text-base font-medium text-gray-700 dark:text-gray-300">
-                    Enable Password Lock
+                  <label
+                    htmlFor="passwordLockEnabled"
+                    className="ml-2 block text-base font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Protéger l’accès avec un mot de passe familial
                   </label>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-                  When enabled, visitors must enter a password to access the website
+                  Les visiteurs devront saisir ce mot de passe pour consulter
+                  les listes.
                 </p>
                 {settingsForm.passwordLockEnabled && (
                   <div>
                     <label className="block text-base font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Site Password
+                      Mot de passe familial
                     </label>
                     <input
                       type="password"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-white"
-                      value={settingsForm.passwordLock || ''}
+                      value={settingsForm.passwordLock || ""}
                       onChange={(e) =>
-                        setSettingsForm((prev) => ({ ...prev, passwordLock: e.target.value }))
+                        setSettingsForm((prev) => ({
+                          ...prev,
+                          passwordLock: e.target.value,
+                        }))
                       }
-                      placeholder="Enter password (leave blank to keep current)"
+                      placeholder="Nouveau mot de passe (facultatif)"
                     />
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                      Leave blank to keep the current password unchanged
+                      Laissez vide pour conserver le mot de passe actuel.
                     </p>
                   </div>
                 )}
@@ -141,36 +162,46 @@ export default function SettingsSection({ settings, onUpdate }: SettingsSectionP
                   onClick={cancelEditingSettings}
                   className="px-4 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                 >
-                  Cancel
+                  Annuler
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 text-base bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
                 >
-                  Save Settings
+                  Enregistrer les réglages
                 </button>
               </div>
             </form>
           ) : (
             <div className="space-y-3">
               <div>
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Site Title</p>
-                <p className="text-base text-gray-900 dark:text-white">{settings.siteTitle}</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Titre du site
+                </p>
+                <p className="text-base text-gray-900 dark:text-white">
+                  {settings.siteTitle}
+                </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Homepage Subtext</p>
-                <p className="text-base text-gray-900 dark:text-white">{settings.homepageSubtext}</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Texte d’accueil
+                </p>
+                <p className="text-base text-gray-900 dark:text-white">
+                  {settings.homepageSubtext}
+                </p>
               </div>
               <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Password Lock</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  Accès familial protégé
+                </p>
                 <p className="text-base text-gray-900 dark:text-white">
                   {settings.passwordLockEnabled ? (
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-base font-medium bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200">
-                      Enabled
+                      Activé
                     </span>
                   ) : (
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-base font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
-                      Disabled
+                      Désactivé
                     </span>
                   )}
                 </p>

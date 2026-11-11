@@ -1,42 +1,52 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import ProtectedRoute from '@/components/protected-route';
-import { useAuth } from '@/lib/auth-context';
-import { wishlistsApi, itemsApi, settingsApi, type Wishlist, type Settings } from '@/lib/api';
-import Header from '@/components/header';
-import Footer from '@/components/footer';
-import Link from 'next/link';
-import StatsGrid from '@/components/admin/StatsGrid';
-import SettingsSection from '@/components/admin/SettingsSection';
-import WishlistCard from '@/components/admin/WishlistCard';
-import CreateWishlistModal from '@/components/admin/CreateWishlistModal';
-import ShareButton from '@/components/share-button';
+import { useEffect, useState } from "react";
+import AccountsSection from "@/components/admin/AccountsSection";
+import PasswordSection from "@/components/admin/PasswordSection";
+import ProtectedRoute from "@/components/protected-route";
+import { useAuth } from "@/lib/auth-context";
+import {
+  wishlistsApi,
+  itemsApi,
+  settingsApi,
+  type Wishlist,
+  type Settings,
+} from "@/lib/api";
+import Header from "@/components/header";
+import Footer from "@/components/footer";
+import Link from "next/link";
+import StatsGrid from "@/components/admin/StatsGrid";
+import SettingsSection from "@/components/admin/SettingsSection";
+import WishlistCard from "@/components/admin/WishlistCard";
+import CreateWishlistModal from "@/components/admin/CreateWishlistModal";
+import ShareButton from "@/components/share-button";
 
 export default function AdminPage() {
-  const { logout } = useAuth();
+  const { logout, user, isAuthenticated } = useAuth();
   const [wishlists, setWishlists] = useState<Wishlist[]>([]);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [settings, setSettings] = useState<Settings>({
-    siteTitle: 'Wishlist',
-    homepageSubtext: 'Browse and explore available wishlists',
+    siteTitle: "Les envies de la famille",
+    homepageSubtext: "Des idées pour faire plaisir à chacun.",
     passwordLockEnabled: false,
   });
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createError, setCreateError] = useState('');
+  const [createError, setCreateError] = useState("");
 
   useEffect(() => {
-    fetchWishlists();
-    fetchSettings();
-  }, []);
+    if (isAuthenticated) {
+      fetchWishlists();
+      fetchSettings();
+    }
+  }, [isAuthenticated]);
 
   const fetchSettings = async () => {
     try {
       const data = await settingsApi.getSettings();
       setSettings(data);
     } catch (error) {
-      console.error('Failed to fetch settings:', error);
+      console.error("Failed to fetch settings:", error);
     }
   };
 
@@ -49,13 +59,13 @@ export default function AdminPage() {
       const counts: Record<string, number> = {};
       await Promise.all(
         data.map(async (w) => {
-          const items = await itemsApi.getAll(w.id);
+          const items = await itemsApi.getAll(w.id, true);
           counts[w.id] = items.length;
-        })
+        }),
       );
       setItemCounts(counts);
     } catch (error) {
-      console.error('Failed to fetch wishlists:', error);
+      console.error("Failed to fetch wishlists:", error);
     } finally {
       setIsLoading(false);
     }
@@ -67,13 +77,13 @@ export default function AdminPage() {
   };
 
   const handleCreateWishlist = async (data: any) => {
-    setCreateError('');
+    setCreateError("");
     try {
       await wishlistsApi.create(data);
       setShowCreateModal(false);
       fetchWishlists();
     } catch (error: any) {
-      setCreateError(error.message || 'Failed to create wishlist');
+      setCreateError(error.message || "Impossible de créer la liste.");
       throw error;
     }
   };
@@ -84,13 +94,13 @@ export default function AdminPage() {
   };
 
   const handleDeleteWishlist = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this wishlist?')) return;
+    if (!confirm("Supprimer cette liste et ses cadeaux ?")) return;
 
     try {
       await wishlistsApi.delete(id);
       fetchWishlists();
     } catch (error) {
-      alert('Failed to delete wishlist');
+      alert("Impossible de supprimer la liste.");
     }
   };
 
@@ -102,7 +112,7 @@ export default function AdminPage() {
       await wishlistsApi.reorder(wishlistId, currentIndex - 1);
       await fetchWishlists();
     } catch (error: any) {
-      alert(`Error: ${error?.message || 'Failed to reorder wishlist'}`);
+      alert(`Error: ${error?.message || "Impossible de déplacer la liste."}`);
     }
   };
 
@@ -114,44 +124,56 @@ export default function AdminPage() {
       await wishlistsApi.reorder(wishlistId, currentIndex + 1);
       await fetchWishlists();
     } catch (error: any) {
-      alert(`Error: ${error?.message || 'Failed to reorder wishlist'}`);
+      alert(`Error: ${error?.message || "Impossible de déplacer la liste."}`);
     }
   };
 
   const stats = {
     totalWishlists: wishlists.length,
     publicWishlists: wishlists.filter((w) => w.isPublic).length,
-    totalItems: Object.values(itemCounts).reduce((sum, count) => sum + count, 0),
+    totalItems: Object.values(itemCounts).reduce(
+      (sum, count) => sum + count,
+      0,
+    ),
   };
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header
-          title="Dashboard"
-          subtitle="Manage your wishlists and items"
+          title={`Les envies de ${user?.displayName || "la famille"}`}
+          subtitle="Ajoutez vos idées et partagez-les avec vos proches."
           actions={
             <>
               <ShareButton
-                title="Check out my wishlist site!"
-                text="I wanted to share my wishlist site with you."
-                url="https://wishlist.tieso.co/"
+                title="Les envies de notre famille"
+                text="Voici les listes de cadeaux de notre famille."
               />
               <Link
                 href="/"
                 className="inline-flex items-center px-6 py-3 border-2 border-indigo-600 dark:border-indigo-500 text-base font-semibold rounded-lg text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-all"
               >
-                View Public Site
+                Voir les listes de la famille
               </Link>
               <button
                 onClick={logout}
                 className="inline-flex items-center px-6 py-3 border-2 border-red-600 dark:border-red-500 text-base font-semibold rounded-lg text-red-600 dark:text-red-400 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all cursor-pointer"
-                title="Logout"
+                title="Déconnexion"
               >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                <svg
+                  className="w-5 h-5 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                  />
                 </svg>
-                Logout
+                Déconnexion
               </button>
             </>
           }
@@ -161,7 +183,7 @@ export default function AdminPage() {
           <div className="px-4 sm:px-0">
             {isLoading ? (
               <div className="text-center py-12">
-                <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+                <p className="text-gray-600 dark:text-gray-400">Chargement…</p>
               </div>
             ) : (
               <>
@@ -169,31 +191,40 @@ export default function AdminPage() {
                 <StatsGrid stats={stats} />
 
                 {/* Settings Section */}
-                <SettingsSection settings={settings} onUpdate={handleUpdateSettings} />
+                {user?.role === "admin" && (
+                  <>
+                    <AccountsSection />
+                    <SettingsSection
+                      settings={settings}
+                      onUpdate={handleUpdateSettings}
+                    />
+                  </>
+                )}
+                <PasswordSection />
 
                 {/* Wishlists Section */}
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                      Your Wishlists
+                      Mes listes
                     </h2>
                     <button
                       onClick={() => setShowCreateModal(true)}
                       className="inline-flex items-center px-6 py-3 border border-transparent text-base font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg transition-all cursor-pointer"
                     >
-                      + Create Wishlist
+                      + Créer une liste
                     </button>
                   </div>
                   {wishlists.length === 0 ? (
                     <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                       <p className="text-gray-500 dark:text-gray-400 mb-6 text-lg">
-                        No wishlists yet
+                        Vous n’avez pas encore de liste.
                       </p>
                       <button
                         onClick={() => setShowCreateModal(true)}
                         className="inline-flex items-center px-6 py-3 border border-transparent text-base font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg transition-all"
                       >
-                        Create Your First Wishlist
+                        Créer ma première liste
                       </button>
                     </div>
                   ) : (
@@ -225,7 +256,7 @@ export default function AdminPage() {
           isOpen={showCreateModal}
           onClose={() => {
             setShowCreateModal(false);
-            setCreateError('');
+            setCreateError("");
           }}
           onCreate={handleCreateWishlist}
           error={createError}

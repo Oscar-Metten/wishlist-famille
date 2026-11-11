@@ -1,17 +1,25 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { wishlistsApi, settingsApi, type Wishlist, type Settings } from '@/lib/api';
-import Header from '@/components/header';
-import Footer from '@/components/footer';
-import PasswordLockGuard from '@/components/password-lock-guard';
-import ShareButton from '@/components/share-button';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  wishlistsApi,
+  settingsApi,
+  type Wishlist,
+  type Settings,
+} from "@/lib/api";
+import Header from "@/components/header";
+import Footer from "@/components/footer";
+import PasswordLockGuard from "@/components/password-lock-guard";
+import ShareButton from "@/components/share-button";
 
 export default function Home() {
   const [wishlists, setWishlists] = useState<Wishlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [settings, setSettings] = useState<Settings>({ siteTitle: 'Wishlist', homepageSubtext: 'Browse and explore available wishlists' });
+  const [settings, setSettings] = useState<Settings>({
+    siteTitle: "Les envies de la famille",
+    homepageSubtext: "Des idées pour faire plaisir à chacun.",
+  });
 
   useEffect(() => {
     fetchWishlists();
@@ -23,7 +31,7 @@ export default function Home() {
       const data = await settingsApi.getSettings();
       setSettings(data);
     } catch (error) {
-      console.error('Failed to fetch settings:', error);
+      console.error("Failed to fetch settings:", error);
     }
   };
 
@@ -33,7 +41,7 @@ export default function Home() {
       setWishlists(data);
       // Item counts removed - requires authentication
     } catch (error) {
-      console.error('Failed to fetch wishlists:', error);
+      console.error("Failed to fetch wishlists:", error);
     } finally {
       setIsLoading(false);
     }
@@ -47,8 +55,8 @@ export default function Home() {
           subtitle={settings.homepageSubtext}
           actions={
             <ShareButton
-              title="Check out this wishlist!"
-              text="I thought you might be interested in this wishlist."
+              title="Une liste pour faire plaisir"
+              text="Voici une liste d’idées cadeaux."
             />
           }
         />
@@ -58,11 +66,13 @@ export default function Home() {
           <div className="px-4 sm:px-0">
             {isLoading ? (
               <div className="text-center py-12">
-                <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+                <p className="text-gray-600 dark:text-gray-400">Chargement…</p>
               </div>
             ) : wishlists.length === 0 ? (
               <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
-                <p className="text-gray-500 dark:text-gray-400">No public wishlists available yet</p>
+                <p className="text-gray-500 dark:text-gray-400">
+                  Les premières listes de la famille arriveront bientôt.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6">

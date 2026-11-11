@@ -1,9 +1,13 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 
-export default function PasswordLockGuard({ children }: { children: React.ReactNode }) {
+export default function PasswordLockGuard({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [isChecking, setIsChecking] = useState(true);
@@ -11,25 +15,29 @@ export default function PasswordLockGuard({ children }: { children: React.ReactN
 
   useEffect(() => {
     // Skip check for admin and lock pages
-    if (pathname.startsWith('/admin') || pathname === '/lock') {
+    if (pathname.startsWith("/admin") || pathname === "/lock") {
       setIsChecking(false);
       return;
     }
 
     const checkPasswordLock = async () => {
       try {
-        const response = await fetch('/api/settings');
+        const response = await fetch("/api/settings");
         const data = await response.json();
 
-        if (data.success && data.settings.passwordLockEnabled) {
+        if (
+          data.success &&
+          data.settings.passwordLockEnabled &&
+          !data.settings.unlocked
+        ) {
           setIsLocked(true);
           // Redirect to lock page
-          router.push('/lock');
+          router.push("/lock");
         } else {
           setIsChecking(false);
         }
       } catch (error) {
-        console.error('Error checking password lock:', error);
+        console.error("Error checking password lock:", error);
         // On error, allow access to prevent site lockout
         setIsChecking(false);
       }
@@ -42,7 +50,7 @@ export default function PasswordLockGuard({ children }: { children: React.ReactN
   if (isChecking) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+        <p className="text-gray-600 dark:text-gray-400">Chargement…</p>
       </div>
     );
   }
